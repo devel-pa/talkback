@@ -1,101 +1,109 @@
-import MediaType from "./utils/media-type"
-import TapeRenderer from "./tape-renderer"
-import ContentEncoding from "./utils/content-encoding"
-import {Options} from "./options"
-import {Metadata, Req, Res} from "./types"
+import MediaType from "./utils/media-type";
+import TapeRenderer from "./tape-renderer";
+import ContentEncoding from "./utils/content-encoding";
+import { Options } from "./options";
+import { Metadata, Req, Res } from "./types";
 
-const URL = require("url")
-const querystring = require("querystring")
+const URL = require("url");
+const querystring = require("querystring");
 
 export default class Tape {
-  req: Req
-  res?: Res
-  options: Options
-  queryParamsToIgnore: string[]
-  meta: Metadata
-  path?: string
+  req: Req;
+  res?: Res;
+  options: Options;
+  queryParamsToIgnore: string[];
+  meta: Metadata;
+  path?: string;
 
-  new: boolean = false
-  used: boolean = false
+  new: boolean = false;
+  used: boolean = false;
 
   constructor(req: Req, options: Options) {
-    this.req = {...req}
-    this.options = options
+    this.req = { ...req };
+    this.options = options;
 
     // This needs to happen before we erase headers since we could lose information
-    this.normalizeReqBody()
+    this.normalizeReqBody();
 
-    this.cleanupReqHeaders()
+    this.cleanupReqHeaders();
 
-    this.queryParamsToIgnore = this.options.ignoreQueryParams
-    this.cleanupQueryParams()
-
+    this.queryParamsToIgnore = this.options.ignoreQueryParams;
+    this.cleanupQueryParams();
 
     this.meta = {
       createdAt: new Date(),
-      host: this.options.host
-    }
+      host: this.options.host,
+    };
   }
 
   static async fromStore(raw: any, options: Options) {
-    return TapeRenderer.fromStore(raw, options)
+    return TapeRenderer.fromStore(raw, options);
   }
 
   cleanupReqHeaders() {
-    let newHeaders = {}
+    let newHeaders = {};
     if (this.options.allowHeaders != undefined) {
       newHeaders = this.options.allowHeaders.reduce((headers, header) => {
-        const lowerHeader = header.toLowerCase()
+        const lowerHeader = header.toLowerCase();
         if (lowerHeader in this.req.headers) {
-          headers[lowerHeader] = this.req.headers[lowerHeader]
+          headers[lowerHeader] = this.req.headers[lowerHeader];
         }
-        return headers
-      }, {})
+        return headers;
+      }, {});
     } else {
-      newHeaders = {...this.req.headers}
+      newHeaders = { ...this.req.headers };
     }
-    this.options.ignoreHeaders.forEach(h => delete newHeaders[h])
+    this.options.ignoreHeaders.forEach((h) => delete newHeaders[h]);
     this.req = {
       ...this.req,
-      headers: newHeaders
-    }
+      headers: newHeaders,
+    };
   }
 
   cleanupQueryParams() {
     if (this.queryParamsToIgnore.length === 0) {
-      return
+      return;
     }
 
-    const url = URL.parse(this.req.url, true)
+    const url = URL.parse(this.req.url, true);
     if (!url.search) {
-      return
+      return;
     }
 
-    const query = {...url.query}
-    this.queryParamsToIgnore.forEach(q => delete query[q])
+    const query = { ...url.query };
+    this.queryParamsToIgnore.forEach((q) => delete query[q]);
 
-    const newQuery = querystring.stringify(query)
+    const newQuery = querystring.stringify(query);
     if (newQuery) {
-      url.query = query
-      url.search = "?" + newQuery
+      url.query = query;
+      url.search = "?" + newQuery;
     } else {
-      url.query = null
-      url.search = null
+      url.query = null;
+      url.search = null;
     }
-    this.req.url = URL.format(url)
+    this.req.url = URL.format(url);
   }
 
   normalizeReqBody() {
-    const mediaType = new MediaType(this.req)
-    const contentEncoding = new ContentEncoding(this.req)
-    if (contentEncoding.isUncompressed() && mediaType.isJSON() && this.req.body.length > 0) {
-      this.req.body = Buffer.from(JSON.stringify(JSON.parse(this.req.body.toString()), null, 2))
+    const mediaType = new MediaType(this.req);
+    const contentEncoding = new ContentEncoding(this.req);
+    if (
+      contentEncoding.isUncompressed() &&
+      mediaType.isJSON() &&
+      this.req.body.length > 0
+    ) {
+      try {
+        var jsonString = JSON.parse(this.req.body.toString());
+        this.req.body = Buffer.from(JSON.stringify(jsonString, null, 2));
+      } catch (err) {
+        this.req.body = Buffer.from(this.req.body.toString());
+      }
     }
   }
 
   async clone() {
-    const tapeRenderer = new TapeRenderer(this)
-    const raw = await tapeRenderer.render()
-    return Tape.fromStore(raw, this.options)
+    const tapeRenderer = new TapeRenderer(this);
+    const raw = await tapeRenderer.render();
+    return Tape.fromStore(raw, this.options);
   }
 }
